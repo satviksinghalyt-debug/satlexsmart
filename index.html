@@ -2,40 +2,45 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>SATLEX V10 – Groq Notes</title>
+<title>SATLEX V11 – STABLE MODE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-/* CORE STYLES */
+/* DARK MODE STYLES */
 body {background:#050505;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
 #app {width:90%;max-width:420px;background:#111;border:1px solid #333;border-radius:20px;padding:25px;box-shadow:0 10px 60px rgba(100,50,255,.25);}
 h2{color:#a48aff;display:flex;justify-content:space-between;align-items:center;margin:0 0 15px 0;}
 .badge{font-size:10px;background:#222;padding:4px 8px;border-radius:4px;color:#aaa;border:1px solid #333;}
-#preview{background:#000;border:1px solid #333;color:#bbb;padding:15px;height:90px;overflow-y:auto;font-family:monospace;font-size:13px;border-radius:10px;margin-bottom:15px;}
+#preview{background:#000;border:1px solid #333;color:#bbb;padding:15px;height:150px;overflow-y:auto;font-family:monospace;font-size:14px;border-radius:10px;margin-bottom:15px;white-space: pre-wrap;}
 #output{background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:15px;margin-top:15px;display:none;font-size:15px;line-height:1.6;color:#fff;}
-button{width:100%;padding:18px;font-weight:800;border-radius:12px;border:none;cursor:pointer;margin-top:5px;font-size:16px;}
+button{width:100%;padding:18px;font-weight:800;border-radius:12px;border:none;cursor:pointer;margin-top:5px;font-size:16px;transition:0.2s;}
 .btn-rec{background:#a48aff;color:#000;}
-.btn-stop{background:#fff;color:#000;}
+.btn-stop{background:#fff;color:#000;animation: pulse 1.5s infinite;}
 .btn-down{background:#222;color:#a48aff;border:1px solid #444;margin-top:15px;display:none;}
 select {width:100%;padding:12px;margin-bottom:15px;background:#222;color:#fff;border:1px solid #444;border-radius:10px;outline:none;}
 h3{color:#a48aff;border-bottom:1px solid #333;padding-bottom:5px;margin-top:20px;}
 strong{color:#fff;}
-ul {padding-left: 20px;}
 
-/* KEY MANAGEMENT STYLES */
-.key-controls {display:flex; justify-content:flex-end; margin-bottom:10px;}
-#reset-key {background:none; border:none; color:#555; font-size:11px; cursor:pointer; padding:0;}
-#reset-key:hover {color:#ff4444;}
+/* Hard Reset Button */
+.top-bar {display:flex; justify-content:flex-end; margin-bottom:10px;}
+#hard-reset {background:none; border:1px solid #333; color:#555; font-size:10px; cursor:pointer; padding:5px 10px; border-radius:5px;}
+#hard-reset:hover {color:#ff4444; border-color:#ff4444;}
+
+@keyframes pulse {
+  0% {box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);}
+  70% {box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);}
+  100% {box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);}
+}
 </style>
 </head>
 
 <body>
 <div id="app">
-  <h2><span>🟣 SATLEX V10</span><span class="badge">GROQ EDITION</span></h2>
-  
-  <div class="key-controls">
-    <button id="reset-key" id="reset-btn">🔑 Reset API Key</button>
+  <div class="top-bar">
+    <button id="hard-reset" onclick="hardReset()">🛑 RESET APP & KEY</button>
   </div>
+  
+  <h2><span>🟣 SATLEX V11</span><span class="badge">STABLE</span></h2>
 
   <select id="mode-select">
     <option value="summary">📝 Summarizer</option>
@@ -44,149 +49,143 @@ ul {padding-left: 20px;}
     <option value="code">💻 Code Explainer</option>
   </select>
 
-  <div id="preview">Tap Record...</div>
-  <button id="main-btn" class="btn-rec">START RECORDING</button>
+  <div id="preview">Tap Record and speak clearly...</div>
+  
+  <button id="main-btn">START RECORDING</button>
   <div id="output"></div>
   <button id="down-btn" class="btn-down">⬇ SAVE NOTES</button>
 </div>
 
 <script>
-/* --- 1. CONFIGURATION & SETUP --- */
+/* --- CONFIGURATION --- */
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const btn = document.getElementById("main-btn");
 const btnDown = document.getElementById("down-btn");
 const prev = document.getElementById("preview");
 const out = document.getElementById("output");
 const modeSelect = document.getElementById("mode-select");
-const resetBtn = document.getElementById("reset-key");
 
 let recognition;
 let isRecording = false;
 let finalRaw = "";
+let accumulatedText = ""; // Holds text safely
+
+// 1. SAFE KEY LOADING
 let GROQ_KEY = localStorage.getItem("satlex_groq_key");
 
-/* --- 2. KEY MANAGEMENT --- */
-if (!GROQ_KEY) {
-    // If no key, ask for one
-    setTimeout(() => {
-        const userKey = prompt("Enter your Groq API Key (Stored securely in your browser):");
+function checkKey() {
+    if (!GROQ_KEY) {
+        let userKey = prompt("Enter your Groq API Key:");
         if (userKey) {
             GROQ_KEY = userKey;
             localStorage.setItem("satlex_groq_key", userKey);
         }
-    }, 500); // Small delay to ensure page loads
+    }
+}
+setTimeout(checkKey, 500);
+
+// 2. HARD RESET FUNCTION
+function hardReset() {
+    if(confirm("This will delete your API key and refresh. Continue?")) {
+        localStorage.removeItem("satlex_groq_key");
+        location.reload();
+    }
 }
 
-// Reset Button Logic
-resetBtn.onclick = () => {
-    localStorage.removeItem("satlex_groq_key");
-    alert("Key reset! Page will reload.");
-    location.reload();
-};
-
-/* --- 3. SPEECH RECOGNITION (The "Ear") --- */
+// 3. STABLE SPEECH SETUP (No Interim Results)
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
-  recognition.continuous = true;
-  recognition.interimResults = true;
+  
+  recognition.continuous = true; 
+  recognition.interimResults = false; // 🛑 CRITICAL FIX: Stops freezing by waiting for sentence end.
+
+  recognition.onstart = function() {
+      prev.innerText = "Listening... (Text will appear when you pause)";
+      accumulatedText = ""; 
+  };
 
   recognition.onresult = (e) => {
-    let txt = "";
+    // Only fires when a full sentence is done. Safe for memory.
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
-          txt += e.results[i][0].transcript;
+          let sentence = e.results[i][0].transcript;
+          accumulatedText += sentence + ". ";
+          prev.innerText = accumulatedText; // Safe update
+          prev.scrollTop = prev.scrollHeight;
       }
-    }
-    // FIX: Only update if there is actual text (Prevents freezing)
-    if (txt.trim() !== "") {
-        prev.innerText += " " + txt;
-        prev.scrollTop = prev.scrollHeight;
     }
   };
 
-  recognition.onend = () => {
-      if(isRecording) {
+  recognition.onerror = (e) => {
+      console.log("Speech Error:", e.error);
+      if(e.error === 'not-allowed') {
+          prev.innerText = "❌ Mic blocked. Click Lock icon in URL bar.";
           isRecording = false;
-          btn.innerText = "START RECORDING (Resume)";
-          btn.className = "btn-rec";
+          updateButton();
       }
   };
+  
+  recognition.onend = () => {
+      if(isRecording) recognition.start(); // Auto-restart if silence stops it
+  };
+
 } else {
-    prev.innerText = "❌ Browser not supported. Use Chrome/Edge.";
+    prev.innerText = "❌ Use Chrome or Edge browser.";
 }
 
-/* --- 4. BUTTON LOGIC --- */
+// 4. BUTTON CONTROLS
 btn.onclick = () => {
-  if (!isRecording) {
-      startRec();
-  } else {
-      stopRec();
-  }
+    if(!GROQ_KEY) { checkKey(); return; }
+    
+    if (!isRecording) {
+        isRecording = true;
+        recognition.start();
+        updateButton();
+    } else {
+        isRecording = false;
+        recognition.stop();
+        updateButton();
+        btn.innerText = "PROCESSING...";
+        btn.disabled = true;
+        callGroq(accumulatedText);
+    }
 };
 
-function startRec(){
-  prev.innerText = "";
-  out.style.display = "none";
-  btnDown.style.display = "none";
-  
-  if(recognition) {
-      recognition.start();
-      isRecording = true;
-      btn.className = "btn-stop";
-      btn.innerText = "STOP & PROCESS";
-  } else {
-      alert("Speech recognition not supported in this browser.");
-  }
+function updateButton() {
+    if(isRecording) {
+        btn.innerText = "STOP & PROCESS";
+        btn.className = "btn-stop";
+    } else {
+        btn.innerText = "START RECORDING";
+        btn.className = "btn-rec";
+        btn.disabled = false;
+    }
 }
 
-function stopRec(){
-  if(recognition) recognition.stop();
-  isRecording = false;
-  btn.innerText = "PROCESSING...";
-  btn.disabled = true;
-  // Send the captured text to Groq
-  callGroq(prev.innerText);
-}
-
-/* --- 5. GROQ API CALL (The "Brain") --- */
+// 5. GROQ CALL (Using Llama 3.3)
 async function callGroq(text) {
-  // Check text
-  if (!text || text.trim() === "") {
-     out.innerHTML = `<span style="color:#ff4444">❌ Error: No speech detected.</span>`;
+  if (!text || text.trim().length < 2) {
+     out.innerHTML = `<span style="color:#ff4444">❌ No speech detected. Try again.</span>`;
      out.style.display = "block";
-     btn.disabled = false;
-     btn.innerText = "START RECORDING";
-     btn.className = "btn-rec";
+     updateButton();
      return;
   }
   
-  // Check Key
-  if (!GROQ_KEY) {
-      alert("No API Key found. Please reset and enter a key.");
-      btn.disabled = false;
-      btn.innerText = "START RECORDING";
-      return;
-  }
-
-  // Choose Prompt
   const mode = modeSelect.value;
-  let sysPrompt = "You are a helpful assistant. Format this nicely.";
+  let sysPrompt = "You are a helpful assistant.";
   
-  if(mode === "summary") sysPrompt = "You are an expert note-taker. Organize this into: 1) Summary, 2) Key Bullet Points, 3) Action Items.";
-  if(mode === "study") sysPrompt = "You are a tutor. Create a study guide with definitions, key dates, and a short quiz.";
-  if(mode === "email") sysPrompt = "You are a professional secretary. Draft a polite, professional email based on this text.";
-  if(mode === "code") sysPrompt = "You are a senior developer. Convert this logic/speech into clear Pseudocode or Python snippets with comments.";
+  if(mode === "summary") sysPrompt = "Create a structured summary with bullet points.";
+  if(mode === "study") sysPrompt = "Create a study guide with definitions and a quiz.";
+  if(mode === "email") sysPrompt = "Draft a professional email from this text.";
+  if(mode === "code") sysPrompt = "Convert this logic to Python code.";
 
   try {
     const res = await fetch(GROQ_API_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${GROQ_KEY}`
-      },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_KEY}` },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // ✅ Correct, Active Model
+        model: "llama-3.3-70b-versatile", // ✅ Correct Model
         messages: [
             { role: "system", content: sysPrompt },
             { role: "user", content: text }
@@ -199,53 +198,34 @@ async function callGroq(text) {
     const data = await res.json();
     
     if (data.error) {
-        if(data.error.code === 'invalid_api_key' || data.error.message.includes('key')) {
-            alert("Invalid API Key. Please reset it.");
-            localStorage.removeItem("satlex_groq_key");
-            location.reload();
+        if(data.error.message.includes('key')) {
+            alert("Invalid Key. Resetting...");
+            hardReset();
         }
-        throw new Error(data.error.message || "Groq API Error");
+        throw new Error(data.error.message);
     }
 
-    let aiText = "";
-    if (data.choices && data.choices.length > 0 && data.choices[0].message){
-      aiText = data.choices[0].message.content;
-    }
-
-    if (!aiText) throw new Error("Empty AI response");
-
+    const aiText = data.choices[0].message.content;
     finalRaw = aiText;
     renderMarkdown(aiText);
 
   } catch(e) {
-    console.error(e);
-    out.innerHTML = `<span style="color:#ff4444">❌ API Error: ${e.message}</span>`;
+    out.innerHTML = `<span style="color:#ff4444">❌ Error: ${e.message}</span>`;
     out.style.display = "block";
+    updateButton();
   }
-
-  btn.disabled = false;
-  btn.className = "btn-rec";
-  btn.innerText = "START RECORDING";
 }
 
-/* --- 6. RENDER & DOWNLOAD --- */
 function renderMarkdown(md){
-  if(!md){
-    out.innerHTML = "❌ No response.";
-    out.style.display = "block";
-    return;
-  }
-  let html = md
+  out.innerHTML = md
     .replace(/^### (.*$)/gim,'<h3>$1</h3>')
     .replace(/^## (.*$)/gim,'<h2>$1</h2>')
-    .replace(/^# (.*$)/gim,'<h1>$1</h1>')
     .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
     .replace(/^\* /gim,'• ') 
     .replace(/\n/g, '<br>');
-
-  out.innerHTML = html;
   out.style.display = "block";
   btnDown.style.display = "block";
+  updateButton();
 }
 
 btnDown.onclick = () => {
