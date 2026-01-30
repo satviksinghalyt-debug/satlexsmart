@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>SATLEX V11 – STABLE MODE</title>
+<title>SATLEX V12 – MOBILE FIX</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -21,7 +21,6 @@ select {width:100%;padding:12px;margin-bottom:15px;background:#222;color:#fff;bo
 h3{color:#a48aff;border-bottom:1px solid #333;padding-bottom:5px;margin-top:20px;}
 strong{color:#fff;}
 
-/* Hard Reset Button */
 .top-bar {display:flex; justify-content:flex-end; margin-bottom:10px;}
 #hard-reset {background:none; border:1px solid #333; color:#555; font-size:10px; cursor:pointer; padding:5px 10px; border-radius:5px;}
 #hard-reset:hover {color:#ff4444; border-color:#ff4444;}
@@ -40,7 +39,7 @@ strong{color:#fff;}
     <button id="hard-reset" onclick="hardReset()">🛑 RESET APP & KEY</button>
   </div>
   
-  <h2><span>🟣 SATLEX V11</span><span class="badge">STABLE</span></h2>
+  <h2><span>🟣 SATLEX V12</span><span class="badge">MOBILE FIX</span></h2>
 
   <select id="mode-select">
     <option value="summary">📝 Summarizer</option>
@@ -68,9 +67,7 @@ const modeSelect = document.getElementById("mode-select");
 let recognition;
 let isRecording = false;
 let finalRaw = "";
-let accumulatedText = ""; // Holds text safely
-
-// 1. SAFE KEY LOADING
+let accumulatedText = ""; 
 let GROQ_KEY = localStorage.getItem("satlex_groq_key");
 
 function checkKey() {
@@ -84,34 +81,34 @@ function checkKey() {
 }
 setTimeout(checkKey, 500);
 
-// 2. HARD RESET FUNCTION
 function hardReset() {
-    if(confirm("This will delete your API key and refresh. Continue?")) {
+    if(confirm("Delete API Key and Refresh?")) {
         localStorage.removeItem("satlex_groq_key");
         location.reload();
     }
 }
 
-// 3. STABLE SPEECH SETUP (No Interim Results)
+/* --- MOBILE-OPTIMIZED SPEECH ENGINE --- */
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   
   recognition.continuous = true; 
-  recognition.interimResults = false; // 🛑 CRITICAL FIX: Stops freezing by waiting for sentence end.
+  recognition.interimResults = false; 
 
+  // ✅ FIX: Do NOT clear text here. Only show "Listening" if empty.
   recognition.onstart = function() {
-      prev.innerText = "Listening... (Text will appear when you pause)";
-      accumulatedText = ""; 
+      if(accumulatedText === "") {
+          prev.innerText = "Listening... (Speak now)";
+      }
   };
 
   recognition.onresult = (e) => {
-    // Only fires when a full sentence is done. Safe for memory.
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (e.results[i].isFinal) {
           let sentence = e.results[i][0].transcript;
           accumulatedText += sentence + ". ";
-          prev.innerText = accumulatedText; // Safe update
+          prev.innerText = accumulatedText; // ✅ Updates safely without deleting history
           prev.scrollTop = prev.scrollHeight;
       }
     }
@@ -120,29 +117,37 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   recognition.onerror = (e) => {
       console.log("Speech Error:", e.error);
       if(e.error === 'not-allowed') {
-          prev.innerText = "❌ Mic blocked. Click Lock icon in URL bar.";
+          prev.innerText = "❌ Mic blocked. Check permissions.";
           isRecording = false;
           updateButton();
       }
   };
   
+  // ✅ FIX: Smooth Auto-Restart for Mobile
   recognition.onend = () => {
-      if(isRecording) recognition.start(); // Auto-restart if silence stops it
+      if(isRecording) {
+          console.log("Mobile restart triggered...");
+          try { recognition.start(); } catch(e){} 
+      }
   };
 
 } else {
-    prev.innerText = "❌ Use Chrome or Edge browser.";
+    prev.innerText = "❌ Browser not supported.";
 }
 
-// 4. BUTTON CONTROLS
+/* --- BUTTONS --- */
 btn.onclick = () => {
     if(!GROQ_KEY) { checkKey(); return; }
     
     if (!isRecording) {
+        // ✅ START NEW SESSION
+        accumulatedText = ""; // Clear text ONLY when user clicks Start
+        prev.innerText = "Listening...";
         isRecording = true;
         recognition.start();
         updateButton();
     } else {
+        // 🛑 STOP SESSION
         isRecording = false;
         recognition.stop();
         updateButton();
@@ -163,7 +168,7 @@ function updateButton() {
     }
 }
 
-// 5. GROQ CALL (Using Llama 3.3)
+/* --- API CALL --- */
 async function callGroq(text) {
   if (!text || text.trim().length < 2) {
      out.innerHTML = `<span style="color:#ff4444">❌ No speech detected. Try again.</span>`;
@@ -185,7 +190,7 @@ async function callGroq(text) {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_KEY}` },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // ✅ Correct Model
+        model: "llama-3.3-70b-versatile",
         messages: [
             { role: "system", content: sysPrompt },
             { role: "user", content: text }
