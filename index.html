@@ -120,25 +120,82 @@ function stopRec(){
   callGroq(prev.innerText);
 }
 
-/* 5. GROQ API CALL (The "Brain") */
+/*5. GROQ API Call */
 async function callGroq(text) {
-  // Guard: Empty text
+  // 1. Validation
   if (!text || text.trim() === "") {
-     out.innerHTML = `<span style="color:#ff4444">❌ Error: No speech detected. Try speaking louder or check microphone permissions.</span>`;
+     out.innerHTML = `<span style="color:#ff4444">❌ Error: No speech detected.</span>`;
      out.style.display="block";
      btn.disabled=false;
      btn.innerText="START RECORDING";
-     btn.className="btn-rec";
      return;
   }
   
-  // Guard: No Key
   if (!GROQ_KEY) {
       alert("No API Key found. Please reset and enter a key.");
       btn.disabled=false;
       btn.innerText="START RECORDING";
       return;
   }
+
+  const mode = modeSelect.value;
+  let sysPrompt = "You are a helpful assistant. Format this nicely.";
+  
+  // Set prompt based on dropdown
+  if(mode === "summary") sysPrompt = "You are an expert note-taker. Organize this into: 1) Summary, 2) Bullet Points, 3) Action Items.";
+  if(mode === "study") sysPrompt = "You are a tutor. Create a study guide with definitions, key dates, and a short quiz.";
+  if(mode === "email") sysPrompt = "You are a professional secretary. Draft a polite, professional email based on this text.";
+  if(mode === "code") sysPrompt = "You are a senior developer. Convert this logic/speech into clear Pseudocode or Python snippets with comments.";
+
+  try {
+    const res = await fetch(GROQ_API_URL, {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":`Bearer ${GROQ_KEY}`
+      },
+      body: JSON.stringify({
+        // 👇 THIS IS THE FIX. I have removed the old 'llama3-8b' model.
+        model: "llama-3.3-70b-versatile", 
+        messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: text }
+        ],
+        temperature: 0.7,
+        max_tokens: 1024
+      })
+    });
+
+    const data = await res.json();
+    
+    if (data.error) {
+        if(data.error.code === 'invalid_api_key' || data.error.message.includes('key')) {
+            alert("Invalid API Key. Please reset it.");
+            resetKey();
+        }
+        throw new Error(data.error.message || "Groq API Error");
+    }
+
+    let aiText="";
+    if (data.choices && data.choices.length > 0 && data.choices[0].message){
+      aiText = data.choices[0].message.content;
+    }
+
+    if (!aiText) throw new Error("Empty AI response");
+
+    finalRaw = aiText;
+    renderMarkdown(aiText);
+
+  } catch(e) {
+    console.error(e);
+    out.innerHTML = `<span style="color:#ff4444">❌ API Error: ${e.message}</span>`;
+    out.style.display="block";
+  }
+
+  btn.disabled=false;
+  btn.className="btn-rec";
+  btn.innerText="START RECORDING";
+}
 
   // Determine Prompt
   const mode = modeSelect.value;
@@ -231,3 +288,4 @@ btnDown.onclick = ()=>{
 </script>
 </body>
 </html>
+
