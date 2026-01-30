@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
+/* CORE STYLES */
 body {background:#050505;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
 #app {width:90%;max-width:420px;background:#111;border:1px solid #333;border-radius:20px;padding:25px;box-shadow:0 10px 60px rgba(100,50,255,.25);}
 h2{color:#a48aff;display:flex;justify-content:space-between;align-items:center;margin:0 0 15px 0;}
@@ -16,13 +17,15 @@ button{width:100%;padding:18px;font-weight:800;border-radius:12px;border:none;cu
 .btn-rec{background:#a48aff;color:#000;}
 .btn-stop{background:#fff;color:#000;}
 .btn-down{background:#222;color:#a48aff;border:1px solid #444;margin-top:15px;display:none;}
-
-/* Dropdown Style */
 select {width:100%;padding:12px;margin-bottom:15px;background:#222;color:#fff;border:1px solid #444;border-radius:10px;outline:none;}
-
 h3{color:#a48aff;border-bottom:1px solid #333;padding-bottom:5px;margin-top:20px;}
 strong{color:#fff;}
 ul {padding-left: 20px;}
+
+/* KEY MANAGEMENT STYLES */
+.key-controls {display:flex; justify-content:flex-end; margin-bottom:10px;}
+#reset-key {background:none; border:none; color:#555; font-size:11px; cursor:pointer; padding:0;}
+#reset-key:hover {color:#ff4444;}
 </style>
 </head>
 
@@ -30,11 +33,15 @@ ul {padding-left: 20px;}
 <div id="app">
   <h2><span>🟣 SATLEX V9</span><span class="badge">GROQ EDITION</span></h2>
   
+  <div class="key-controls">
+    <button id="reset-key" onclick="resetKey()">🔑 Reset API Key</button>
+  </div>
+
   <select id="mode-select">
-    <option value="summary">📝 Summarizer (Default)</option>
+    <option value="summary">📝 Summarizer</option>
     <option value="study">🎓 Study Guide</option>
     <option value="email">📧 Professional Email</option>
-    <option value="code">💻 Code/Logic Explainer</option>
+    <option value="code">💻 Code Explainer</option>
   </select>
 
   <div id="preview">Tap Record...</div>
@@ -44,19 +51,34 @@ ul {padding-left: 20px;}
 </div>
 
 <script>
-/* CONFIG */
+/* CONFIGURATION */
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_KEY = prompt("Enter your Groq API Key:");
 
+/* 1. SECURE KEY HANDLING */
+let GROQ_KEY = localStorage.getItem("satlex_groq_key");
+
+if (!GROQ_KEY) {
+    const userKey = prompt("Enter your Groq API Key (Stored securely in your browser):");
+    if (userKey) {
+        GROQ_KEY = userKey;
+        localStorage.setItem("satlex_groq_key", userKey);
+    }
+}
+
+function resetKey() {
+    localStorage.removeItem("satlex_groq_key");
+    location.reload();
+}
+
+/* 2. VARIABLES */
 let recognition, isRecording=false, finalRaw="";
-
 const btn = document.getElementById("main-btn"),
       btnDown = document.getElementById("down-btn"),
       prev = document.getElementById("preview"),
       out = document.getElementById("output"),
       modeSelect = document.getElementById("mode-select");
 
-/* Speech Setup */
+/* 3. BROWSER SPEECH RECOGNITION (The "Ear") */
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
@@ -70,9 +92,11 @@ if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     prev.innerText += " "+txt;
     prev.scrollTop = prev.scrollHeight;
   };
-} else prev.innerText="❌ Browser not supported.";
+} else {
+    prev.innerText="❌ Browser not supported. Use Chrome or Edge.";
+}
 
-/* Button Logic */
+/* 4. BUTTON LOGIC */
 btn.onclick = () => {
   if (!isRecording) startRec(); else stopRec();
 };
@@ -92,25 +116,35 @@ function stopRec(){
   isRecording=false;
   btn.innerText="PROCESSING...";
   btn.disabled=true;
+  // Send the text caught by the browser to Groq
   callGroq(prev.innerText);
 }
 
-/* GROQ API Call */
+/* 5. GROQ API CALL (The "Brain") */
 async function callGroq(text) {
+  // Guard: Empty text
   if (!text || text.trim() === "") {
-     out.innerHTML = `<span style="color:#ff4444">❌ Error: No speech detected.</span>`;
+     out.innerHTML = `<span style="color:#ff4444">❌ Error: No speech detected. Try speaking louder or check microphone permissions.</span>`;
      out.style.display="block";
      btn.disabled=false;
      btn.innerText="START RECORDING";
      btn.className="btn-rec";
      return;
   }
+  
+  // Guard: No Key
+  if (!GROQ_KEY) {
+      alert("No API Key found. Please reset and enter a key.");
+      btn.disabled=false;
+      btn.innerText="START RECORDING";
+      return;
+  }
 
-  // Determine System Prompt based on Dropdown
+  // Determine Prompt
   const mode = modeSelect.value;
   let sysPrompt = "You are a helpful assistant. Format this nicely.";
   
-  if(mode === "summary") sysPrompt = "You are an expert note-taker. Organize this into: 1) Summary, 2) Bullet Points, 3) Action Items.";
+  if(mode === "summary") sysPrompt = "You are an expert note-taker. Organize this into: 1) Summary, 2) Key Bullet Points, 3) Action Items.";
   if(mode === "study") sysPrompt = "You are a tutor. Create a study guide with definitions, key dates, and a short quiz.";
   if(mode === "email") sysPrompt = "You are a professional secretary. Draft a polite, professional email based on this text.";
   if(mode === "code") sysPrompt = "You are a senior developer. Convert this logic/speech into clear Pseudocode or Python snippets with comments.";
@@ -123,7 +157,8 @@ async function callGroq(text) {
         "Authorization":`Bearer ${GROQ_KEY}`
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192", 
+        // ✅ CORRECT MODEL: Using Llama 3.3 because we are processing TEXT.
+        model: "llama-3.3-70b-versatile", 
         messages: [
             { role: "system", content: sysPrompt },
             { role: "user", content: text }
@@ -134,9 +169,15 @@ async function callGroq(text) {
     });
 
     const data = await res.json();
-    console.log("GROQ RESP:", data);
-
-    if (data.error) throw new Error(data.error.message || "Groq API Error");
+    
+    // API Error Handling
+    if (data.error) {
+        if(data.error.code === 'invalid_api_key' || data.error.message.includes('key')) {
+            alert("Invalid API Key. Please reset it.");
+            resetKey();
+        }
+        throw new Error(data.error.message || "Groq API Error");
+    }
 
     let aiText="";
     if (data.choices && data.choices.length > 0 && data.choices[0].message){
@@ -159,7 +200,7 @@ async function callGroq(text) {
   btn.innerText="START RECORDING";
 }
 
-/* Markdown Render */
+/* 6. RENDER MARKDOWN */
 function renderMarkdown(md){
   if(!md){
     out.innerHTML="❌ No response.";
@@ -171,7 +212,7 @@ function renderMarkdown(md){
     .replace(/^## (.*$)/gim,'<h2>$1</h2>')
     .replace(/^# (.*$)/gim,'<h1>$1</h1>')
     .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-    .replace(/^\* /gim,'• ') // Clean bullets
+    .replace(/^\* /gim,'• ') 
     .replace(/\n/g, '<br>');
 
   out.innerHTML=html;
@@ -179,7 +220,7 @@ function renderMarkdown(md){
   btnDown.style.display="block";
 }
 
-/* Download */
+/* 7. DOWNLOAD BUTTON */
 btnDown.onclick = ()=>{
   const blob = new Blob([finalRaw],{type:'text/markdown'});
   const a = document.createElement("a");
