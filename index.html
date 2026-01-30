@@ -16,14 +16,27 @@ button{width:100%;padding:18px;font-weight:800;border-radius:12px;border:none;cu
 .btn-rec{background:#a48aff;color:#000;}
 .btn-stop{background:#fff;color:#000;}
 .btn-down{background:#222;color:#a48aff;border:1px solid #444;margin-top:15px;display:none;}
-h3{color:#a48aff;border-bottom:1px solid #333;}
+
+/* Dropdown Style */
+select {width:100%;padding:12px;margin-bottom:15px;background:#222;color:#fff;border:1px solid #444;border-radius:10px;outline:none;}
+
+h3{color:#a48aff;border-bottom:1px solid #333;padding-bottom:5px;margin-top:20px;}
 strong{color:#fff;}
+ul {padding-left: 20px;}
 </style>
 </head>
 
 <body>
 <div id="app">
   <h2><span>🟣 SATLEX V9</span><span class="badge">GROQ EDITION</span></h2>
+  
+  <select id="mode-select">
+    <option value="summary">📝 Summarizer (Default)</option>
+    <option value="study">🎓 Study Guide</option>
+    <option value="email">📧 Professional Email</option>
+    <option value="code">💻 Code/Logic Explainer</option>
+  </select>
+
   <div id="preview">Tap Record...</div>
   <button id="main-btn" class="btn-rec">START RECORDING</button>
   <div id="output"></div>
@@ -32,7 +45,7 @@ strong{color:#fff;}
 
 <script>
 /* CONFIG */
-const GROQ_API_URL = "https://api.groq.com/v1/models/groq/text:generate";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_KEY = prompt("Enter your Groq API Key:");
 
 let recognition, isRecording=false, finalRaw="";
@@ -40,7 +53,8 @@ let recognition, isRecording=false, finalRaw="";
 const btn = document.getElementById("main-btn"),
       btnDown = document.getElementById("down-btn"),
       prev = document.getElementById("preview"),
-      out = document.getElementById("output");
+      out = document.getElementById("output"),
+      modeSelect = document.getElementById("mode-select");
 
 /* Speech Setup */
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -83,6 +97,24 @@ function stopRec(){
 
 /* GROQ API Call */
 async function callGroq(text) {
+  if (!text || text.trim() === "") {
+     out.innerHTML = `<span style="color:#ff4444">❌ Error: No speech detected.</span>`;
+     out.style.display="block";
+     btn.disabled=false;
+     btn.innerText="START RECORDING";
+     btn.className="btn-rec";
+     return;
+  }
+
+  // Determine System Prompt based on Dropdown
+  const mode = modeSelect.value;
+  let sysPrompt = "You are a helpful assistant. Format this nicely.";
+  
+  if(mode === "summary") sysPrompt = "You are an expert note-taker. Organize this into: 1) Summary, 2) Bullet Points, 3) Action Items.";
+  if(mode === "study") sysPrompt = "You are a tutor. Create a study guide with definitions, key dates, and a short quiz.";
+  if(mode === "email") sysPrompt = "You are a professional secretary. Draft a polite, professional email based on this text.";
+  if(mode === "code") sysPrompt = "You are a senior developer. Convert this logic/speech into clear Pseudocode or Python snippets with comments.";
+
   try {
     const res = await fetch(GROQ_API_URL, {
       method:"POST",
@@ -91,18 +123,24 @@ async function callGroq(text) {
         "Authorization":`Bearer ${GROQ_KEY}`
       },
       body: JSON.stringify({
-        input: text,
-        max_output_tokens: 512,
-        temperature: 0.7
+        model: "llama3-8b-8192", 
+        messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: text }
+        ],
+        temperature: 0.7,
+        max_tokens: 1024
       })
     });
 
     const data = await res.json();
-    console.log("GROQ RESP:",data);
+    console.log("GROQ RESP:", data);
+
+    if (data.error) throw new Error(data.error.message || "Groq API Error");
 
     let aiText="";
-    if (data.results && data.results.length>0 && data.results[0].output){
-      aiText = data.results[0].output.map(o => o.message?.content || "").join("\n");
+    if (data.choices && data.choices.length > 0 && data.choices[0].message){
+      aiText = data.choices[0].message.content;
     }
 
     if (!aiText) throw new Error("Empty AI response");
@@ -111,6 +149,7 @@ async function callGroq(text) {
     renderMarkdown(aiText);
 
   } catch(e) {
+    console.error(e);
     out.innerHTML = `<span style="color:#ff4444">❌ API Error: ${e.message}</span>`;
     out.style.display="block";
   }
@@ -128,10 +167,12 @@ function renderMarkdown(md){
     return;
   }
   let html = md
-    .replace(/^## (.*$)/gim,'<h3>$1</h3>')
-    .replace(/^# (.*$)/gim,'<h2>$1</h2>')
+    .replace(/^### (.*$)/gim,'<h3>$1</h3>')
+    .replace(/^## (.*$)/gim,'<h2>$1</h2>')
+    .replace(/^# (.*$)/gim,'<h1>$1</h1>')
     .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-    .replace(/^\* /gim,'<br>• ');
+    .replace(/^\* /gim,'• ') // Clean bullets
+    .replace(/\n/g, '<br>');
 
   out.innerHTML=html;
   out.style.display="block";
@@ -143,7 +184,7 @@ btnDown.onclick = ()=>{
   const blob = new Blob([finalRaw],{type:'text/markdown'});
   const a = document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="Satlex_Groq_Notes.md";
+  a.download="Satlex_Notes.md";
   a.click();
 };
 </script>
