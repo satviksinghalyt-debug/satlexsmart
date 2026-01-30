@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SATLEX V9 – Groq Notes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {background:#050505;color:#e0e0e0;font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;}
+#app {width:90%;max-width:420px;background:#111;border:1px solid #333;border-radius:20px;padding:25px;box-shadow:0 10px 60px rgba(100,50,255,.25);}
+h2{color:#a48aff;display:flex;justify-content:space-between;align-items:center;margin:0 0 15px 0;}
+.badge{font-size:10px;background:#222;padding:4px 8px;border-radius:4px;color:#aaa;border:1px solid #333;}
+#preview{background:#000;border:1px solid #333;color:#bbb;padding:15px;height:90px;overflow-y:auto;font-family:monospace;font-size:13px;border-radius:10px;margin-bottom:15px;}
+#output{background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:15px;margin-top:15px;display:none;font-size:15px;line-height:1.6;color:#fff;}
+button{width:100%;padding:18px;font-weight:800;border-radius:12px;border:none;cursor:pointer;margin-top:5px;font-size:16px;}
+.btn-rec{background:#a48aff;color:#000;}
+.btn-stop{background:#fff;color:#000;}
+.btn-down{background:#222;color:#a48aff;border:1px solid #444;margin-top:15px;display:none;}
+h3{color:#a48aff;border-bottom:1px solid #333;}
+strong{color:#fff;}
+</style>
+</head>
+
+<body>
+<div id="app">
+  <h2><span>🟣 SATLEX V9</span><span class="badge">GROQ EDITION</span></h2>
+  <div id="preview">Tap Record...</div>
+  <button id="main-btn" class="btn-rec">START RECORDING</button>
+  <div id="output"></div>
+  <button id="down-btn" class="btn-down">⬇ SAVE NOTES</button>
+</div>
+
+<script>
+/* CONFIG */
+const GROQ_API_URL = "https://api.groq.com/v1/models/groq/text:generate";
+const GROQ_KEY = prompt("Enter your Groq API Key:");
+
+let recognition, isRecording=false, finalRaw="";
+
+const btn = document.getElementById("main-btn"),
+      btnDown = document.getElementById("down-btn"),
+      prev = document.getElementById("preview"),
+      out = document.getElementById("output");
+
+/* Speech Setup */
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.onresult = (e) => {
+    let txt="";
+    for (let i=e.resultIndex;i<e.results.length;i++){
+      if (e.results[i].isFinal) txt+=e.results[i][0].transcript;
+    }
+    prev.innerText += " "+txt;
+    prev.scrollTop = prev.scrollHeight;
+  };
+} else prev.innerText="❌ Browser not supported.";
+
+/* Button Logic */
+btn.onclick = () => {
+  if (!isRecording) startRec(); else stopRec();
+};
+
+function startRec(){
+  prev.innerText="";
+  out.style.display="none";
+  btnDown.style.display="none";
+  recognition.start();
+  isRecording=true;
+  btn.className="btn-stop";
+  btn.innerText="STOP & PROCESS";
+}
+
+function stopRec(){
+  recognition.stop();
+  isRecording=false;
+  btn.innerText="PROCESSING...";
+  btn.disabled=true;
+  callGroq(prev.innerText);
+}
+
+/* GROQ API Call */
+async function callGroq(text) {
+  try {
+    const res = await fetch(GROQ_API_URL, {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":`Bearer ${GROQ_KEY}`
+      },
+      body: JSON.stringify({
+        input: text,
+        max_output_tokens: 512,
+        temperature: 0.7
+      })
+    });
+
+    const data = await res.json();
+    console.log("GROQ RESP:",data);
+
+    let aiText="";
+    if (data.results && data.results.length>0 && data.results[0].output){
+      aiText = data.results[0].output.map(o => o.message?.content || "").join("\n");
+    }
+
+    if (!aiText) throw new Error("Empty AI response");
+
+    finalRaw = aiText;
+    renderMarkdown(aiText);
+
+  } catch(e) {
+    out.innerHTML = `<span style="color:#ff4444">❌ API Error: ${e.message}</span>`;
+    out.style.display="block";
+  }
+
+  btn.disabled=false;
+  btn.className="btn-rec";
+  btn.innerText="START RECORDING";
+}
+
+/* Markdown Render */
+function renderMarkdown(md){
+  if(!md){
+    out.innerHTML="❌ No response.";
+    out.style.display="block";
+    return;
+  }
+  let html = md
+    .replace(/^## (.*$)/gim,'<h3>$1</h3>')
+    .replace(/^# (.*$)/gim,'<h2>$1</h2>')
+    .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+    .replace(/^\* /gim,'<br>• ');
+
+  out.innerHTML=html;
+  out.style.display="block";
+  btnDown.style.display="block";
+}
+
+/* Download */
+btnDown.onclick = ()=>{
+  const blob = new Blob([finalRaw],{type:'text/markdown'});
+  const a = document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="Satlex_Groq_Notes.md";
+  a.click();
+};
+</script>
+</body>
+</html>
