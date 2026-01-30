@@ -78,24 +78,40 @@ const btn = document.getElementById("main-btn"),
       out = document.getElementById("output"),
       modeSelect = document.getElementById("mode-select");
 
-/* 3. BROWSER SPEECH RECOGNITION (The "Ear") */
+/* 3 Speech Setup */
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   recognition = new SR();
   recognition.continuous = true;
   recognition.interimResults = true;
+
   recognition.onresult = (e) => {
     let txt="";
     for (let i=e.resultIndex;i<e.results.length;i++){
-      if (e.results[i].isFinal) txt+=e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+          txt += e.results[i][0].transcript;
+      }
     }
-    prev.innerText += " "+txt;
-    prev.scrollTop = prev.scrollHeight;
+    
+    // ✅ BUG FIX: Only update screen if there is actual text
+    // This prevents the "infinite loop" that freezes your browser
+    if (txt.trim() !== "") {
+        prev.innerText += " " + txt;
+        prev.scrollTop = prev.scrollHeight;
+    }
   };
-} else {
-    prev.innerText="❌ Browser not supported. Use Chrome or Edge.";
-}
-
+  
+  // ✅ NEW: Detect if browser stops the microphone automatically
+  recognition.onend = () => {
+      if(isRecording) {
+          isRecording = false;
+          btn.innerText = "START RECORDING (Resume)";
+          btn.className = "btn-rec";
+      }
+  };
+  
+} else prev.innerText="❌ Browser not supported.";
+  }
 /* 4. BUTTON LOGIC */
 btn.onclick = () => {
   if (!isRecording) startRec(); else stopRec();
@@ -288,4 +304,5 @@ btnDown.onclick = ()=>{
 </script>
 </body>
 </html>
+
 
